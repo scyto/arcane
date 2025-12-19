@@ -62,4 +62,5 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BUILD_NEXT: "true"
           SKIP_RELEASE: "true"
+          SKIP_CHANGELOG: "true"
           GORELEASER_CURRENT_TAG: next-${{ steps.vars.outputs.sha_short }}

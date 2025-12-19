@@ -167,7 +167,7 @@ dockers_v2:
       'org.opencontainers.image.description': 'Modern Docker Management, Made for Everyone'
       'com.getarcaneapp.arcane.updater': 'false'
       'com.getarcaneapp.arcane.server': 'true'
-    disable: '{{ if not .Env.BUILD_NEXT }}true{{ end }}'
+    disable: '{{ if not (index .Env "BUILD_NEXT") }}true{{ end }}'
     sbom: true
     retry:
       attempts: 5
@@ -197,7 +197,7 @@ dockers_v2:
       'org.opencontainers.image.description': 'Arcane Agent'
       'com.getarcaneapp.arcane.updater': 'false'
       'com.getarcaneapp.arcane.server': 'true'
-    disable: '{{ if not .Env.BUILD_NEXT }}true{{ end }}'
+    disable: '{{ if not (index .Env "BUILD_NEXT") }}true{{ end }}'
     sbom: true
     retry:
       attempts: 5
@@ -227,7 +227,7 @@ dockers_v2:
       'org.opencontainers.image.description': 'Modern Docker Management, Made for Everyone'
       'com.getarcaneapp.arcane.updater': 'false'
       'com.getarcaneapp.arcane.server': 'true'
-    disable: '{{ if not .Env.BUILD_NEXT }}true{{ end }}'
+    disable: '{{ if not (index .Env "BUILD_NEXT") }}true{{ end }}'
     sbom: true
     retry:
       attempts: 5
@@ -257,7 +257,7 @@ dockers_v2:
       'org.opencontainers.image.description': 'Arcane Agent'
       'com.getarcaneapp.arcane.updater': 'false'
       'com.getarcaneapp.arcane.server': 'true'
-    disable: '{{ if not .Env.BUILD_NEXT }}true{{ end }}'
+    disable: '{{ if not (index .Env "BUILD_NEXT") }}true{{ end }}'
     sbom: true
     retry:
       attempts: 5
@@ -265,7 +265,7 @@ dockers_v2:
       max_delay: 120s
 
 changelog:
-  disable: '{{ if .Env.SKIP_CHANGELOG }}true{{ end }}'
+  disable: '{{ if index .Env "SKIP_CHANGELOG" }}true{{ end }}'
   use: github
   filters:
     exclude:
@@ -307,7 +307,7 @@ release:
   github:
     owner: getarcaneapp
     name: arcane
-  disable: '{{ if .Env.SKIP_RELEASE }}true{{ end }}'
+  disable: '{{ if index .Env "SKIP_RELEASE" }}true{{ end }}'
   draft: true
   replace_existing_draft: true
   use_existing_draft: true
