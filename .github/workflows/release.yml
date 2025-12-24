@@ -60,7 +60,7 @@ jobs:
         with:
           distribution: goreleaser
           version: "~> v2"
-          args: release --clean --release-notes=release-notes.md --skip=validate
+          args: release --clean --release-notes=release-notes.md --skip=validate,homebrew
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SKIP_CHANGELOG: "true"
