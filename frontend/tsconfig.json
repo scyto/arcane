@@ -13,6 +13,5 @@
 		"strict": true,
 		"moduleResolution": "bundler",
 		"types": ["unplugin-icons/types/svelte"]
-	},
-	"exclude": ["src/lib/paraglide/**/*"]
+	}
 }
