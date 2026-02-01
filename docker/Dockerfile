@@ -85,16 +85,6 @@ COPY --from=backend-builder /build/arcane .
 EXPOSE 3552
 VOLUME ["/app/data"]
 
-LABEL org.opencontainers.image.authors="OFKM Technologies" \
-org.opencontainers.image.url="https://github.com/getarcaneapp/arcane" \
-org.opencontainers.image.documentation="https://github.com/getarcaneapp/arcane/blob/main/README.md" \
-org.opencontainers.image.source="https://github.com/getarcaneapp/arcane" \
-org.opencontainers.image.version=${VERSION} \
-org.opencontainers.image.revision=${REVISION} \
-org.opencontainers.image.licenses="BSD-3-Clause" \
-org.opencontainers.image.ref.name="arcane" \
-org.opencontainers.image.title="Arcane" \
-org.opencontainers.image.description="Modern Docker Management, Made for Everyone" \
-com.getarcaneapp.arcane="true"
+LABEL com.getarcaneapp.arcane="true"
 
 CMD ["./arcane"]
