@@ -52,8 +52,6 @@
 	const excludedContainers = new SvelteSet<string>();
 	let searchTerm = $state('');
 
-
-
 	$effect(() => {
 		const savedValue = $formInputs.autoUpdateExcludedContainers?.value || '';
 		const names = savedValue
@@ -141,7 +139,7 @@
 				return $formInputs.vulnerabilityScanEnabled.value;
 			default:
 				return undefined;
-			}
+		}
 	}
 
 	function getContainerName(c: ContainerSummaryDto): string {
@@ -222,74 +220,69 @@
 													{/if}
 												{/snippet}
 
-													{#if job.id === 'auto-update' && $formInputs.autoUpdate.value}
-														<div class="border-border/20 space-y-3 border-t pt-3">
-															<div class="space-y-1">
-																<Label class="text-sm font-medium">
-																	{m.auto_update_excluded_containers()}
-																	{#await containersPromise then containers}
-																		<span class="text-muted-foreground ml-1 font-normal">
-																			({containers.filter((c) => excludedContainers.has(getContainerName(c))).length})
-																		</span>
-																	{/await}
-																</Label>
-																<p class="text-muted-foreground text-xs">{m.auto_update_exclude_description()}</p>
-															</div>
-
-															<div class="rounded-md border p-2">
-																<Input
-																	type="search"
-																	placeholder="Search containers..."
-																	class="mb-2 h-8"
-																	bind:value={searchTerm}
-																/>
-																<ScrollArea.Root class="h-64 w-full rounded-md border p-2">
-																	<div class="space-y-2">
-																		{#await containersPromise}
-																			<div class="flex items-center justify-center p-4">
-																				<Spinner class="size-4" />
-																			</div>
-																		{:then containers}
-																			{@const allItems = containers.map(mapContainerToItem)}
-																			{@const filteredItems = searchTerm 
-																				? allItems.filter(item => item.label.toLowerCase().includes(searchTerm.toLowerCase())) 
-																				: allItems}
-																			
-																			{#if filteredItems.length === 0}
-																				<p class="text-muted-foreground text-center text-sm py-4">
-																					{m.common_no_results_found()}
-																				</p>
-																			{:else}
-																				{#each filteredItems as container (container.value)}
-																					<div class="flex items-center space-x-2">
-																						<Checkbox
-																							id="container-{container.value}"
-																							checked={container.selected}
-																							disabled={container.disabled}
-																							onCheckedChange={() => toggleContainerExclusion(container.value)}
-																						/>
-																						<Label
-																							for="container-{container.value}"
-																							class="text-sm font-normal {container.disabled ? 'text-muted-foreground' : ''}"
-																						>
-																							{container.label}
-																							{#if container.hint}
-																								<span class="ml-1 text-xs opacity-70">{container.hint}</span>
-																							{/if}
-																						</Label>
-																					</div>
-																				{/each}
-																			{/if}
-																		{:catch error}
-																			<div class="text-destructive text-sm p-2">
-																				{error.message || 'Failed to load containers'}
-																			</div>
-																		{/await}
-																	</div>
-																</ScrollArea.Root>
-															</div>
+												{#if job.id === 'auto-update' && $formInputs.autoUpdate.value}
+													<div class="border-border/20 space-y-3 border-t pt-3">
+														<div class="space-y-1">
+															<Label class="text-sm font-medium">
+																{m.auto_update_excluded_containers()}
+																{#await containersPromise then containers}
+																	<span class="text-muted-foreground ml-1 font-normal">
+																		({containers.filter((c) => excludedContainers.has(getContainerName(c))).length})
+																	</span>
+																{/await}
+															</Label>
+															<p class="text-muted-foreground text-xs">{m.auto_update_exclude_description()}</p>
 														</div>
-													{/if}
+
+														<div class="rounded-md border p-2">
+															<Input type="search" placeholder="Search containers..." class="mb-2 h-8" bind:value={searchTerm} />
+															<ScrollArea.Root class="h-64 w-full rounded-md border p-2">
+																<div class="space-y-2">
+																	{#await containersPromise}
+																		<div class="flex items-center justify-center p-4">
+																			<Spinner class="size-4" />
+																		</div>
+																	{:then containers}
+																		{@const allItems = containers.map(mapContainerToItem)}
+																		{@const filteredItems = searchTerm
+																			? allItems.filter((item) => item.label.toLowerCase().includes(searchTerm.toLowerCase()))
+																			: allItems}
+
+																		{#if filteredItems.length === 0}
+																			<p class="text-muted-foreground py-4 text-center text-sm">
+																				{m.common_no_results_found()}
+																			</p>
+																		{:else}
+																			{#each filteredItems as container (container.value)}
+																				<div class="flex items-center space-x-2">
+																					<Checkbox
+																						id="container-{container.value}"
+																						checked={container.selected}
+																						disabled={container.disabled}
+																						onCheckedChange={() => toggleContainerExclusion(container.value)}
+																					/>
+																					<Label
+																						for="container-{container.value}"
+																						class="text-sm font-normal {container.disabled ? 'text-muted-foreground' : ''}"
+																					>
+																						{container.label}
+																						{#if container.hint}
+																							<span class="ml-1 text-xs opacity-70">{container.hint}</span>
+																						{/if}
+																					</Label>
+																				</div>
+																			{/each}
+																		{/if}
+																	{:catch error}
+																		<div class="text-destructive p-2 text-sm">
+																			{error.message || 'Failed to load containers'}
+																		</div>
+																	{/await}
+																</div>
+															</ScrollArea.Root>
+														</div>
+													</div>
+												{/if}
 
 												{#if job.id === 'scheduled-prune'}
 													{#if $formInputs.scheduledPruneEnabled.value}

@@ -5,7 +5,6 @@
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import { m } from '$lib/paraglide/messages';
 	import { eventService } from '$lib/services/event-service';
-	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { queryKeys } from '$lib/query/query-keys';
 	import { untrack } from 'svelte';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index.js';
@@ -17,16 +16,15 @@
 	let events = $state(untrack(() => data.events));
 	let selectedIds = $state<string[]>([]);
 	let requestOptions = $state(untrack(() => data.eventRequestOptions));
-	const envId = $derived(environmentStore.selected?.id || '0');
 
 	const eventsQuery = createQuery(() => ({
-		queryKey: queryKeys.events.listByEnvironment(envId, requestOptions),
-		queryFn: () => eventService.getEventsForEnvironment(envId, requestOptions),
+		queryKey: queryKeys.events.listGlobal(requestOptions),
+		queryFn: () => eventService.getEvents(requestOptions),
 		initialData: data.events
 	}));
 
 	const deleteSelectedMutation = createMutation(() => ({
-		mutationKey: queryKeys.events.deleteSelected(envId),
+		mutationKey: queryKeys.events.deleteSelectedGlobal(),
 		mutationFn: async (ids: string[]) => {
 			let successCount = 0;
 			let failureCount = 0;

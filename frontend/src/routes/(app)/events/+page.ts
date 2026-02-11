@@ -3,11 +3,9 @@ import { queryKeys } from '$lib/query/query-keys';
 import type { SearchPaginationSortRequest } from '$lib/types/pagination.type';
 import { resolveInitialTableRequest } from '$lib/utils/table-persistence.util';
 import type { PageLoad } from './$types';
-import { environmentStore } from '$lib/stores/environment.store.svelte';
 
 export const load: PageLoad = async ({ parent }) => {
 	const { queryClient } = await parent();
-	const envId = await environmentStore.getCurrentEnvironmentId();
 
 	const eventRequestOptions = resolveInitialTableRequest('arcane-events-table', {
 		pagination: {
@@ -21,8 +19,8 @@ export const load: PageLoad = async ({ parent }) => {
 	} satisfies SearchPaginationSortRequest);
 
 	const events = await queryClient.fetchQuery({
-		queryKey: queryKeys.events.listByEnvironment(envId, eventRequestOptions),
-		queryFn: () => eventService.getEventsForEnvironment(envId, eventRequestOptions)
+		queryKey: queryKeys.events.listGlobal(eventRequestOptions),
+		queryFn: () => eventService.getEvents(eventRequestOptions)
 	});
 
 	return { events, eventRequestOptions };

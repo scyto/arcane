@@ -65,10 +65,8 @@ export const queryKeys = {
 	},
 	events: {
 		all: ['events'] as const,
-		listByEnvironment: (environmentId: string, options: SearchPaginationSortRequest) =>
-			['events', environmentId, stableSerialize(options)] as const,
 		listGlobal: (options: SearchPaginationSortRequest) => ['events', 'global', stableSerialize(options)] as const,
-		deleteSelected: (environmentId: string) => ['events', 'delete-selected', environmentId] as const
+		deleteSelectedGlobal: () => ['events', 'delete-selected', 'global'] as const
 	},
 	system: {
 		upgradeAvailable: (scope: 'mobile-nav' | 'sidebar') => ['system', 'upgrade-available', scope] as const,
