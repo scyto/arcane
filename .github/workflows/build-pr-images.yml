@@ -1,4 +1,5 @@
 name: Build PR Images
+# fork: uses standard GitHub runners + Buildx instead of Depot
 
 on:
     pull_request_target:
