@@ -14,7 +14,7 @@
 	import { toast } from 'svelte-sonner';
 	import { tryCatch } from '$lib/utils/try-catch';
 	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
-	import { stripImageDigest } from '$lib/utils/string.utils';
+	import { truncateImageDigest } from '$lib/utils/string.utils';
 	import ServiceEditorDialog from './service-editor-dialog.svelte';
 
 	let {
@@ -130,7 +130,7 @@
 </script>
 
 {#snippet ImageCell({ value }: { value: unknown })}
-	<span class="font-mono text-sm">{stripImageDigest(String(value ?? ''))}</span>
+	<span class="font-mono text-sm">{truncateImageDigest(String(value ?? ''))}</span>
 {/snippet}
 
 {#snippet ModeCell({ value }: { value: unknown })}
@@ -163,7 +163,7 @@
 			variant: item.mode === 'global' ? 'emerald' : 'blue'
 		})}
 		title={(item: SwarmServiceSummary) => item.name}
-		subtitle={(item: SwarmServiceSummary) => ((mobileFieldVisibility.image ?? true) ? stripImageDigest(item.image) : null)}
+		subtitle={(item: SwarmServiceSummary) => ((mobileFieldVisibility.image ?? true) ? truncateImageDigest(item.image) : null)}
 		badges={[
 			(item: SwarmServiceSummary) =>
 				(mobileFieldVisibility.mode ?? true) ? { variant: modeVariant(item.mode), text: item.mode } : null
