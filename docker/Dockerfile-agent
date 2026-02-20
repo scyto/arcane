@@ -1,6 +1,4 @@
 # syntax=docker/dockerfile:1
-ARG VERSION="dev"
-ARG REVISION="unknown"
 
 FROM --platform=$BUILDPLATFORM golang:1.26-trixie AS agent-builder
 ARG TARGETARCH
@@ -48,9 +46,6 @@ WORKDIR /app
 RUN mkdir -p /app/data
 
 COPY --from=agent-builder /out/arcane-agent ./arcane-agent
-
-ARG VERSION="dev"
-ARG REVISION="unknown"
 
 ENV NVIDIA_VISIBLE_DEVICES=all \
     NVIDIA_DRIVER_CAPABILITIES=compute,utility \

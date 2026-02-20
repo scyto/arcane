@@ -60,8 +60,6 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
 # Stage 3: Production Image
 FROM debian:trixie-slim AS runner
 ARG TARGETARCH
-ARG VERSION
-ARG REVISION
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl tzdata tar gzip \
