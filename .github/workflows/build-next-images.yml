@@ -117,6 +117,7 @@ jobs:
             REVISION=${{ github.sha }}
           sbom: true
           provenance: true
+          cache-to: type=registry,ref=${{ env.MANAGER_IMAGE_NAME }}:buildcache-manager,mode=max,image-manifest=true,oci-mediatypes=true
 
       - name: Agent image metadata
         id: agent-meta
@@ -154,3 +155,4 @@ jobs:
             REVISION=${{ github.sha }}
           sbom: true
           provenance: true
+          cache-to: type=registry,ref=${{ env.AGENT_IMAGE_NAME }}:buildcache-agent,mode=max,image-manifest=true,oci-mediatypes=true

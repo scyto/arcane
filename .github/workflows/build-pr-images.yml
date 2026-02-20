@@ -82,6 +82,13 @@ jobs:
                       org.opencontainers.image.title=Arcane Agent
                       org.opencontainers.image.description=Arcane Agent
 
+            - name: Embed PR version/revision into .arcane.json
+              run: |
+                  jq --arg version "pr-${{ github.event.pull_request.number }}" \
+                     --arg revision "${{ github.event.pull_request.head.sha }}" \
+                     '.version = $version | .revision = $revision' \
+                     .arcane.json > .arcane.json.tmp && mv .arcane.json.tmp .arcane.json
+
             - name: Build and push manager image
               uses: docker/build-push-action@v6
               with:
@@ -91,11 +98,8 @@ jobs:
                   push: true
                   tags: ${{ steps.manager-meta.outputs.tags }}
                   labels: ${{ steps.manager-meta.outputs.labels }}
-                  build-args: |
-                      VERSION=pr-${{ github.event.pull_request.number }}
-                      REVISION=${{ github.event.pull_request.head.sha }}
-                  cache-from: type=gha,scope=manager
-                  cache-to: type=gha,mode=max,scope=manager
+                  cache-from: type=registry,ref=${{ env.MANAGER_IMAGE_NAME }}:buildcache-manager
+                  cache-to: type=registry,ref=${{ env.MANAGER_IMAGE_NAME }}:buildcache-manager,mode=max,image-manifest=true,oci-mediatypes=true
 
             - name: Build and push agent image
               uses: docker/build-push-action@v6
@@ -106,11 +110,8 @@ jobs:
                   push: true
                   tags: ${{ steps.agent-meta.outputs.tags }}
                   labels: ${{ steps.agent-meta.outputs.labels }}
-                  build-args: |
-                      VERSION=pr-${{ github.event.pull_request.number }}
-                      REVISION=${{ github.event.pull_request.head.sha }}
-                  cache-from: type=gha,scope=agent
-                  cache-to: type=gha,mode=max,scope=agent
+                  cache-from: type=registry,ref=${{ env.AGENT_IMAGE_NAME }}:buildcache-agent
+                  cache-to: type=registry,ref=${{ env.AGENT_IMAGE_NAME }}:buildcache-agent,mode=max,image-manifest=true,oci-mediatypes=true
 
             - name: Find Comment
               uses: peter-evans/find-comment@v4
