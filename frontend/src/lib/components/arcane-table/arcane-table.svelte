@@ -66,9 +66,7 @@
 		groupIcon,
 		groupCollapsedState = $bindable<Record<string, boolean>>({}),
 		onGroupToggle,
-		imageNameFilterOptions,
-		// Expandable row props
-		expandedRowContent
+		imageNameFilterOptions
 	}: {
 		items: Paginated<TData>;
 		requestOptions: SearchPaginationSortRequest;
@@ -105,8 +103,6 @@
 		groupCollapsedState?: Record<string, boolean>;
 		onGroupToggle?: (groupName: string) => void;
 		imageNameFilterOptions?: string[];
-		// Expandable row props
-		expandedRowContent?: Snippet<[{ row: Row<TData>; item: TData }]>;
 	} = $props();
 
 	// Default page size constant
@@ -120,19 +116,6 @@
 	const enablePersist = $derived(!!persistKey);
 	const getEffectiveLimit = () => requestOptions?.pagination?.limit ?? items?.pagination?.itemsPerPage ?? DEFAULT_LIMIT;
 	let prefs = $state<PersistedState<CompactTablePrefs> | null>(null);
-
-	// Expandable row state
-	let expandedRows = $state<Set<string>>(new Set());
-
-	function toggleRowExpanded(rowId: string) {
-		const next = new Set(expandedRows);
-		if (next.has(rowId)) {
-			next.delete(rowId);
-		} else {
-			next.add(rowId);
-		}
-		expandedRows = next;
-	}
 
 	const passAllGlobal: (row: unknown, columnId: string, filterValue: unknown) => boolean = () => true;
 
@@ -401,9 +384,6 @@
 	});
 
 	const columnsDef = $derived(cachedColumnsDef.length > 0 ? cachedColumnsDef : buildColumns(columns, selectionDisabled));
-
-	// Compute effective column count (add 1 for expand chevron column when expandable)
-	const effectiveColumnsCount = $derived(columnsDef.length + (expandedRowContent ? 1 : 0));
 
 	const table = createSvelteTable({
 		get data() {
@@ -679,7 +659,7 @@
 			<ArcaneTableDesktopView
 				{table}
 				{selectedIds}
-				columnsCount={effectiveColumnsCount}
+				columnsCount={columnsDef.length}
 				{groupedRows}
 				{groupIcon}
 				{groupCollapsedState}
@@ -689,9 +669,6 @@
 				{onToggleGroupSelection}
 				onToggleRowSelection={(id, selected) => onToggleRow(selected, id)}
 				{unstyled}
-				{expandedRowContent}
-				{expandedRows}
-				onToggleRowExpanded={toggleRowExpanded}
 			/>
 		</div>
 
@@ -706,9 +683,6 @@
 					{groupCollapsedState}
 					onGroupToggle={handleGroupToggle}
 					{unstyled}
-					{expandedRowContent}
-					{expandedRows}
-					onToggleRowExpanded={toggleRowExpanded}
 				/>
 			</div>
 		</div>
@@ -741,7 +715,7 @@
 			<ArcaneTableDesktopView
 				{table}
 				{selectedIds}
-				columnsCount={effectiveColumnsCount}
+				columnsCount={columnsDef.length}
 				{groupedRows}
 				{groupIcon}
 				{groupCollapsedState}
@@ -750,9 +724,6 @@
 				{getGroupSelectionState}
 				{onToggleGroupSelection}
 				onToggleRowSelection={(id, selected) => onToggleRow(selected, id)}
-				{expandedRowContent}
-				{expandedRows}
-				onToggleRowExpanded={toggleRowExpanded}
 			/>
 		</div>
 
@@ -765,9 +736,6 @@
 				{groupIcon}
 				{groupCollapsedState}
 				onGroupToggle={handleGroupToggle}
-				{expandedRowContent}
-				{expandedRows}
-				onToggleRowExpanded={toggleRowExpanded}
 			/>
 		</div>
 
