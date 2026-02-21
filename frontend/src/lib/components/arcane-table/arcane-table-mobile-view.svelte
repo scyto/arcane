@@ -37,6 +37,16 @@
 
 	const hasExpand = $derived(!!expandedRowContent);
 
+	function shouldIgnoreRowClick(event: MouseEvent): boolean {
+		const target = event.target as HTMLElement | null;
+		return !!target?.closest('a, button, input, [role="checkbox"], [data-slot="checkbox"], [data-row-select-ignore]');
+	}
+
+	function handleRowClick(event: MouseEvent, rowId: string) {
+		if (shouldIgnoreRowClick(event)) return;
+		if (hasExpand) onToggleRowExpanded?.(rowId);
+	}
+
 	// Get rows for a specific group from the table model
 	function getRowsForGroup(groupItems: any[]) {
 		const groupIds = new Set(groupItems.map((item) => item.id));
@@ -66,7 +76,7 @@
 							{@const isExpanded = expandedRows?.has(rowId) ?? false}
 							<!-- svelte-ignore a11y_click_events_have_key_events -->
 							<!-- svelte-ignore a11y_no_static_element_interactions -->
-							<div class={cn(hasExpand && 'cursor-pointer')} onclick={() => hasExpand && onToggleRowExpanded?.(rowId)}>
+							<div class={cn(hasExpand && 'cursor-pointer')} onclick={(e) => handleRowClick(e, rowId)}>
 								{@render mobileCard({ row, item: row.original as any, mobileFieldVisibility })}
 							</div>
 							{#if hasExpand && isExpanded && expandedRowContent}
@@ -107,7 +117,7 @@
 			{@const isExpanded = expandedRows?.has(rowId) ?? false}
 			<!-- svelte-ignore a11y_click_events_have_key_events -->
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
-			<div class={cn(hasExpand && 'cursor-pointer')} onclick={() => hasExpand && onToggleRowExpanded?.(rowId)}>
+			<div class={cn(hasExpand && 'cursor-pointer')} onclick={(e) => handleRowClick(e, rowId)}>
 				{@render mobileCard({ row, item: row.original as any, mobileFieldVisibility })}
 			</div>
 			{#if hasExpand && isExpanded && expandedRowContent}
