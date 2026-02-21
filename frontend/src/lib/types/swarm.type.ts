@@ -5,6 +5,13 @@ export interface SwarmServicePort {
 	publishMode?: string;
 }
 
+export interface SwarmServiceMount {
+	type: string;
+	source?: string;
+	target: string;
+	readOnly?: boolean;
+}
+
 export interface SwarmServiceSummary {
 	id: string;
 	name: string;
@@ -17,6 +24,9 @@ export interface SwarmServiceSummary {
 	updatedAt: string;
 	labels?: Record<string, string> | null;
 	stackName?: string | null;
+	nodes: string[];
+	networks: string[];
+	mounts: SwarmServiceMount[];
 }
 
 export interface SwarmServiceInspect {
