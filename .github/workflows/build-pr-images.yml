@@ -58,6 +58,7 @@ jobs:
               run: pnpm -C frontend build
               env:
                   NODE_OPTIONS: --max-old-space-size=4096
+                  BUILD_PATH: dist
 
             - name: Stage frontend dist for Go embed
               run: |
