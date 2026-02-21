@@ -2,10 +2,10 @@
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
 	import type { ColumnSpec, MobileFieldVisibility } from '$lib/components/arcane-table';
 	import { UniversalMobileCard } from '$lib/components/arcane-table';
-	import { DockIcon, LayersIcon, GlobeIcon, EllipsisIcon, EditIcon, TrashIcon } from '$lib/icons';
+	import { DockIcon, LayersIcon, GlobeIcon, EllipsisIcon, EditIcon, TrashIcon, NetworksIcon, VolumesIcon } from '$lib/icons';
 	import { m } from '$lib/paraglide/messages';
 	import { swarmService } from '$lib/services/swarm-service';
-	import type { SwarmServiceSummary, SwarmServicePort } from '$lib/types/swarm.type';
+	import type { SwarmServiceSummary, SwarmServicePort, SwarmServiceMount } from '$lib/types/swarm.type';
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
@@ -25,17 +25,26 @@
 		requestOptions: SearchPaginationSortRequest;
 	} = $props();
 
-	function formatPorts(ports?: SwarmServicePort[]) {
-		if (!ports || ports.length === 0) return m.common_na();
-		return ports
-			.map((port) => {
-				const protocol = port.protocol || 'tcp';
-				if (port.publishedPort) {
-					return `${port.publishedPort}:${port.targetPort}/${protocol}`;
-				}
-				return `${port.targetPort}/${protocol}`;
-			})
-			.join(', ');
+	const MAX_OVERFLOW_ITEMS = 3;
+
+	function formatPort(port: SwarmServicePort): string {
+		const protocol = port.protocol || 'tcp';
+		if (port.publishedPort) {
+			return `${port.publishedPort}:${port.targetPort}/${protocol}`;
+		}
+		return `${port.targetPort}/${protocol}`;
+	}
+
+	function formatPortsList(ports?: SwarmServicePort[]): string[] {
+		if (!ports || ports.length === 0) return [];
+		return ports.map(formatPort);
+	}
+
+	function getShortName(name: string, stackName?: string | null): string {
+		if (stackName && name.startsWith(`${stackName}_`)) {
+			return name.slice(stackName.length + 1);
+		}
+		return name;
 	}
 
 	function modeVariant(mode: string): 'green' | 'blue' | 'amber' | 'gray' {
@@ -110,27 +119,29 @@
 
 	const columns = [
 		{ accessorKey: 'id', title: m.common_id(), hidden: true },
-		{ accessorKey: 'name', title: m.common_name(), sortable: true },
-		{ accessorKey: 'image', title: m.common_image(), sortable: true, cell: ImageCell },
+		{ accessorKey: 'stackName', title: m.swarm_stack(), sortable: true, cell: StackCell },
+		{ accessorKey: 'name', title: m.common_name(), sortable: true, cell: NameCell },
 		{ accessorKey: 'mode', title: m.swarm_mode(), sortable: true, cell: ModeCell },
 		{ accessorKey: 'replicas', title: m.swarm_replicas(), sortable: true, cell: ReplicasCell },
-		{ accessorKey: 'stackName', title: m.swarm_stack(), sortable: true, cell: StackCell },
+		{ id: 'nodes', accessorFn: (item: SwarmServiceSummary) => item.nodes, title: m.swarm_nodes_column(), cell: NodesCell },
+		{ id: 'networks', accessorFn: (item: SwarmServiceSummary) => item.networks, title: m.swarm_networks(), cell: NetworksCell },
 		{ accessorKey: 'ports', title: m.common_ports(), cell: PortsCell }
 	] satisfies ColumnSpec<SwarmServiceSummary>[];
 
 	const mobileFields = [
-		{ id: 'image', label: m.common_image(), defaultVisible: true },
+		{ id: 'stackName', label: m.swarm_stack(), defaultVisible: true },
 		{ id: 'mode', label: m.swarm_mode(), defaultVisible: true },
 		{ id: 'replicas', label: m.swarm_replicas(), defaultVisible: true },
-		{ id: 'stackName', label: m.swarm_stack(), defaultVisible: false },
+		{ id: 'nodes', label: m.swarm_nodes_column(), defaultVisible: true },
+		{ id: 'networks', label: m.swarm_networks(), defaultVisible: false },
 		{ id: 'ports', label: m.common_ports(), defaultVisible: false }
 	];
 
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
 </script>
 
-{#snippet ImageCell({ value }: { value: unknown })}
-	<span class="font-mono text-sm">{truncateImageDigest(String(value ?? ''))}</span>
+{#snippet NameCell({ item }: { item: SwarmServiceSummary })}
+	<span class="text-sm font-medium">{getShortName(item.name, item.stackName)}</span>
 {/snippet}
 
 {#snippet ModeCell({ value }: { value: unknown })}
@@ -149,8 +160,121 @@
 	<span class="font-mono text-sm">{item.runningReplicas} / {item.replicas}</span>
 {/snippet}
 
-{#snippet PortsCell({ value }: { value: unknown })}
-	<span class="text-sm">{formatPorts(value as SwarmServicePort[] | undefined)}</span>
+{#snippet OverflowCell({ items }: { items: string[] })}
+	{#if !items || items.length === 0}
+		<span class="text-muted-foreground text-sm">{m.common_na()}</span>
+	{:else}
+		<div class="flex flex-col gap-0.5">
+			{#each items.slice(0, MAX_OVERFLOW_ITEMS) as item}
+				<span class="max-w-45 truncate font-mono text-sm">{item}</span>
+			{/each}
+			{#if items.length > MAX_OVERFLOW_ITEMS}
+				<span class="text-muted-foreground text-xs font-medium">
+					{m.swarm_n_more({ count: items.length - MAX_OVERFLOW_ITEMS })}
+				</span>
+			{/if}
+		</div>
+	{/if}
+{/snippet}
+
+{#snippet NodesCell({ item }: { item: SwarmServiceSummary })}
+	{@render OverflowCell({ items: item.nodes })}
+{/snippet}
+
+{#snippet NetworksCell({ item }: { item: SwarmServiceSummary })}
+	{@render OverflowCell({ items: item.networks })}
+{/snippet}
+
+{#snippet PortsCell({ item }: { item: SwarmServiceSummary })}
+	{@render OverflowCell({ items: formatPortsList(item.ports) })}
+{/snippet}
+
+{#snippet ExpandedRowDetail({ item }: { item: SwarmServiceSummary })}
+	<div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+		<!-- Full Service Name + Image -->
+		<div class="space-y-3">
+			<div>
+				<h4 class="text-muted-foreground mb-1 text-xs font-medium tracking-wider uppercase">
+					{m.swarm_full_name()}
+				</h4>
+				<span class="text-sm font-medium">{item.name}</span>
+			</div>
+			<div>
+				<h4 class="text-muted-foreground mb-1 text-xs font-medium tracking-wider uppercase">
+					{m.common_image()}
+				</h4>
+				<span class="font-mono text-sm break-all">{truncateImageDigest(item.image)}</span>
+			</div>
+		</div>
+
+		<!-- Mounts -->
+		<div>
+			<h4 class="text-muted-foreground mb-1 text-xs font-medium tracking-wider uppercase">
+				{m.common_mounts()}
+			</h4>
+			{#if !item.mounts || item.mounts.length === 0}
+				<span class="text-muted-foreground text-sm">{m.common_na()}</span>
+			{:else}
+				<div class="flex flex-col gap-1">
+					{#each item.mounts as mount}
+						<div class="flex items-center gap-2 text-sm">
+							<StatusBadge text={mount.type} variant="gray" size="sm" minWidth="none" />
+							<span class="max-w-62.5 truncate font-mono" title="{mount.source || ''} → {mount.target}">
+								{mount.source || '(anon)'} → {mount.target}
+							</span>
+							{#if mount.readOnly}
+								<StatusBadge text="ro" variant="amber" size="sm" minWidth="none" />
+							{/if}
+						</div>
+					{/each}
+				</div>
+			{/if}
+		</div>
+
+		<!-- All Nodes -->
+		<div>
+			<h4 class="text-muted-foreground mb-1 text-xs font-medium tracking-wider uppercase">
+				{m.swarm_nodes_column()} ({item.nodes?.length ?? 0})
+			</h4>
+			{#if !item.nodes || item.nodes.length === 0}
+				<span class="text-muted-foreground text-sm">{m.common_na()}</span>
+			{:else}
+				<div class="flex flex-wrap gap-1">
+					{#each item.nodes as node}
+						<StatusBadge text={node} variant="gray" size="sm" minWidth="none" />
+					{/each}
+				</div>
+			{/if}
+		</div>
+
+		<!-- Full Ports (only if overflowed) -->
+		{#if item.ports && item.ports.length > MAX_OVERFLOW_ITEMS}
+			<div class="md:col-span-3">
+				<h4 class="text-muted-foreground mb-1 text-xs font-medium tracking-wider uppercase">
+					{m.common_ports()} ({item.ports.length})
+				</h4>
+				<div class="flex flex-wrap gap-1">
+					{#each item.ports as port}
+						<StatusBadge text={formatPort(port)} variant="gray" size="sm" minWidth="none" />
+					{/each}
+				</div>
+			</div>
+		{/if}
+
+		<!-- Full Networks (only if overflowed) -->
+		{#if item.networks && item.networks.length > MAX_OVERFLOW_ITEMS}
+			<div class="md:col-span-3">
+				<h4 class="text-muted-foreground mb-1 text-xs font-medium tracking-wider uppercase">
+					{m.swarm_networks()} ({item.networks.length})
+				</h4>
+				<div class="flex flex-wrap gap-1">
+					{#each item.networks as network}
+						<StatusBadge text={network} variant="gray" size="sm" minWidth="none" />
+					{/each}
+				</div>
+			</div>
+		{/if}
+	</div>
 {/snippet}
 
 {#snippet ServiceMobileCardSnippet({
@@ -166,8 +290,8 @@
 			component: DockIcon,
 			variant: item.mode === 'global' ? 'emerald' : 'blue'
 		})}
-		title={(item: SwarmServiceSummary) => item.name}
-		subtitle={(item: SwarmServiceSummary) => ((mobileFieldVisibility.image ?? true) ? truncateImageDigest(item.image) : null)}
+		title={(item: SwarmServiceSummary) => getShortName(item.name, item.stackName)}
+		subtitle={(item: SwarmServiceSummary) => ((mobileFieldVisibility.stackName ?? true) ? (item.stackName ?? null) : null)}
 		badges={[
 			(item: SwarmServiceSummary) =>
 				(mobileFieldVisibility.mode ?? true) ? { variant: modeVariant(item.mode), text: item.mode } : null
@@ -181,15 +305,25 @@
 				show: mobileFieldVisibility.replicas ?? true
 			},
 			{
-				label: m.swarm_stack(),
-				getValue: (item: SwarmServiceSummary) => item.stackName ?? m.common_na(),
-				icon: LayersIcon,
+				label: m.swarm_nodes_column(),
+				getValue: (item: SwarmServiceSummary) =>
+					item.nodes?.length
+						? item.nodes.slice(0, 3).join(', ') + (item.nodes.length > 3 ? ` +${item.nodes.length - 3}` : '')
+						: m.common_na(),
+				icon: NetworksIcon,
 				iconVariant: 'gray' as const,
-				show: mobileFieldVisibility.stackName ?? false
+				show: mobileFieldVisibility.nodes ?? true
+			},
+			{
+				label: m.swarm_networks(),
+				getValue: (item: SwarmServiceSummary) => (item.networks?.length ? item.networks.join(', ') : m.common_na()),
+				icon: NetworksIcon,
+				iconVariant: 'gray' as const,
+				show: mobileFieldVisibility.networks ?? false
 			},
 			{
 				label: m.common_ports(),
-				getValue: (item: SwarmServiceSummary) => formatPorts(item.ports),
+				getValue: (item: SwarmServiceSummary) => formatPortsList(item.ports).join(', ') || m.common_na(),
 				icon: GlobeIcon,
 				iconVariant: 'gray' as const,
 				show: mobileFieldVisibility.ports ?? false
@@ -247,4 +381,5 @@
 	{mobileFields}
 	rowActions={RowActions}
 	mobileCard={ServiceMobileCardSnippet}
+	expandedRowContent={ExpandedRowDetail}
 />

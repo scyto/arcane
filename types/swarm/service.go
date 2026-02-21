@@ -31,6 +31,20 @@ type ServicePort struct {
 	PublishMode string `json:"publishMode,omitempty"`
 }
 
+type ServiceMount struct {
+	// Type of the mount (bind, volume, tmpfs, npipe, cluster).
+	Type string `json:"type"`
+
+	// Source is the host path or volume name.
+	Source string `json:"source,omitempty"`
+
+	// Target is the container-internal path.
+	Target string `json:"target"`
+
+	// ReadOnly indicates if the mount is read-only.
+	ReadOnly bool `json:"readOnly,omitempty"`
+}
+
 type ServiceSummary struct {
 	// ID is the unique identifier of the service.
 	//
@@ -88,6 +102,21 @@ type ServiceSummary struct {
 	//
 	// Required: false
 	StackName string `json:"stackName,omitempty"`
+
+	// Nodes is the list of node hostnames running tasks for this service.
+	//
+	// Required: true
+	Nodes []string `json:"nodes"`
+
+	// Networks is the list of network names attached to this service.
+	//
+	// Required: true
+	Networks []string `json:"networks"`
+
+	// Mounts is the list of volume/bind mounts configured on this service.
+	//
+	// Required: true
+	Mounts []ServiceMount `json:"mounts"`
 }
 
 type ServiceInspect struct {
@@ -173,7 +202,7 @@ type ServiceUpdateResponse struct {
 	Warnings []string `json:"warnings,omitempty"`
 }
 
-func NewServiceSummary(service swarm.Service) ServiceSummary {
+func NewServiceSummary(service swarm.Service, nodeNames []string) ServiceSummary {
 	spec := service.Spec
 
 	mode := "unknown"
@@ -219,6 +248,30 @@ func NewServiceSummary(service swarm.Service) ServiceSummary {
 		stackName = spec.Labels[StackNamespaceLabel]
 	}
 
+	// Extract networks from task template
+	networkConfigs := spec.TaskTemplate.Networks
+	networks := make([]string, 0, len(networkConfigs))
+	for _, n := range networkConfigs {
+		networks = append(networks, n.Target)
+	}
+
+	// Extract mounts from container spec
+	mounts := make([]ServiceMount, 0)
+	if spec.TaskTemplate.ContainerSpec != nil {
+		for _, m := range spec.TaskTemplate.ContainerSpec.Mounts {
+			mounts = append(mounts, ServiceMount{
+				Type:     string(m.Type),
+				Source:   m.Source,
+				Target:   m.Target,
+				ReadOnly: m.ReadOnly,
+			})
+		}
+	}
+
+	if nodeNames == nil {
+		nodeNames = []string{}
+	}
+
 	return ServiceSummary{
 		ID:              service.ID,
 		Name:            spec.Name,
@@ -231,6 +284,9 @@ func NewServiceSummary(service swarm.Service) ServiceSummary {
 		UpdatedAt:       service.UpdatedAt,
 		Labels:          spec.Labels,
 		StackName:       stackName,
+		Nodes:           nodeNames,
+		Networks:        networks,
+		Mounts:          mounts,
 	}
 }
 

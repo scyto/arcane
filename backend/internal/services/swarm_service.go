@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -43,9 +44,45 @@ func (s *SwarmService) ListServicesPaginated(ctx context.Context, params paginat
 		return nil, pagination.Response{}, fmt.Errorf("failed to list swarm services: %w", err)
 	}
 
+	// Fetch nodes to resolve node IDs to hostnames
+	nodes, err := dockerClient.NodeList(ctx, swarm.NodeListOptions{})
+	if err != nil {
+		return nil, pagination.Response{}, fmt.Errorf("failed to list swarm nodes: %w", err)
+	}
+	nodeNameByID := make(map[string]string, len(nodes))
+	for _, node := range nodes {
+		nodeNameByID[node.ID] = node.Description.Hostname
+	}
+
+	// Fetch tasks and group running tasks by service ID
+	tasks, err := dockerClient.TaskList(ctx, swarm.TaskListOptions{})
+	if err != nil {
+		return nil, pagination.Response{}, fmt.Errorf("failed to list swarm tasks: %w", err)
+	}
+	serviceNodes := make(map[string]map[string]struct{})
+	for _, task := range tasks {
+		if string(task.Status.State) != "running" {
+			continue
+		}
+		if _, ok := serviceNodes[task.ServiceID]; !ok {
+			serviceNodes[task.ServiceID] = make(map[string]struct{})
+		}
+		if nodeName, ok := nodeNameByID[task.NodeID]; ok {
+			serviceNodes[task.ServiceID][nodeName] = struct{}{}
+		}
+	}
+
 	items := make([]swarmtypes.ServiceSummary, 0, len(services))
 	for _, service := range services {
-		items = append(items, swarmtypes.NewServiceSummary(service))
+		var nodeNames []string
+		if nodeSet, ok := serviceNodes[service.ID]; ok {
+			nodeNames = make([]string, 0, len(nodeSet))
+			for name := range nodeSet {
+				nodeNames = append(nodeNames, name)
+			}
+			sort.Strings(nodeNames)
+		}
+		items = append(items, swarmtypes.NewServiceSummary(service, nodeNames))
 	}
 
 	config := s.buildServicePaginationConfig()
@@ -381,6 +418,12 @@ func (s *SwarmService) buildServicePaginationConfig() pagination.Config[swarmtyp
 			func(svc swarmtypes.ServiceSummary) (string, error) { return svc.ID, nil },
 			func(svc swarmtypes.ServiceSummary) (string, error) { return svc.StackName, nil },
 			func(svc swarmtypes.ServiceSummary) (string, error) { return svc.Mode, nil },
+			func(svc swarmtypes.ServiceSummary) (string, error) {
+				return strings.Join(svc.Networks, " "), nil
+			},
+			func(svc swarmtypes.ServiceSummary) (string, error) {
+				return strings.Join(svc.Nodes, " "), nil
+			},
 		},
 		SortBindings: []pagination.SortBinding[swarmtypes.ServiceSummary]{
 			{Key: "name", Fn: func(a, b swarmtypes.ServiceSummary) int { return strings.Compare(a.Name, b.Name) }},
