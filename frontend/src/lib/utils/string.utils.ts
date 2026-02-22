@@ -17,5 +17,5 @@ export function truncateString(str: string | undefined, maxLength: number): stri
 }
 
 export function truncateImageDigest(image: string): string {
-	return image.replace(/@sha256:([a-f0-9]{7})[a-f0-9]+/g, '@sha256:$1');
+	return image.replace(/@sha256:([a-fA-F0-9]{7})[a-fA-F0-9]+/g, '@sha256:$1');
 }
