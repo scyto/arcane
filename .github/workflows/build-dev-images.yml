@@ -1,11 +1,12 @@
 name: Build Dev Images
-# fork: builds Docker images for any branch on demand, or auto-builds on push to main.
-# Uses host compilation + CI Dockerfiles (same pattern as build-pr-images.yml).
+# fork: builds Docker images on push to main/dev branches, or on demand for any branch.
+# Uses host compilation + CI Dockerfiles for fast, cacheable builds.
 
 on:
     push:
         branches:
             - main
+            - feat/docker-swarm
     workflow_dispatch:
         inputs:
             ref:
@@ -41,9 +42,12 @@ jobs:
                     echo "ref=${{ github.event.inputs.ref }}" >> $GITHUB_OUTPUT
                     SLUG=$(echo "${{ github.event.inputs.ref }}" | sed 's/[^a-zA-Z0-9._-]/-/g' | tr '[:upper:]' '[:lower:]')
                     echo "tag_prefix=dev-${SLUG}" >> $GITHUB_OUTPUT
-                  else
+                  elif [ "${{ github.ref }}" = "refs/heads/main" ]; then
                     echo "ref=${{ github.sha }}" >> $GITHUB_OUTPUT
                     echo "tag_prefix=next" >> $GITHUB_OUTPUT
+                  else
+                    echo "ref=${{ github.sha }}" >> $GITHUB_OUTPUT
+                    echo "tag_prefix=dev" >> $GITHUB_OUTPUT
                   fi
 
             - name: Checkout to resolve SHA
