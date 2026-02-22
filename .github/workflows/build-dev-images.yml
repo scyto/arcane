@@ -1,6 +1,11 @@
 name: Build Dev Images
 # fork: builds Docker images on push to main/dev branches, or on demand for any branch.
 # Uses host compilation + CI Dockerfiles for fast, cacheable builds.
+#
+# Optimizations:
+#   - No separate prepare job (metadata computed inline, avoids scheduling overhead)
+#   - Parallel Go cross-compilation (amd64 + arm64 built concurrently)
+#   - QEMU setup overlapped with Go compilation (background process)
 
 on:
     push:
@@ -27,16 +32,12 @@ env:
     AGENT_IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/arcane-headless
 
 jobs:
-    prepare:
+    build-manager:
         runs-on: ubuntu-24.04
-        outputs:
-            ref: ${{ steps.meta.outputs.ref }}
-            sha_short: ${{ steps.meta.outputs.sha_short }}
-            tag_prefix: ${{ steps.meta.outputs.tag_prefix }}
-            version_label: ${{ steps.meta.outputs.version_label }}
+
         steps:
-            - name: Determine target ref
-              id: resolve
+            - name: Resolve build metadata
+              id: meta
               run: |
                   if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
                     echo "ref=${{ github.event.inputs.ref }}" >> $GITHUB_OUTPUT
@@ -50,31 +51,18 @@ jobs:
                     echo "tag_prefix=dev" >> $GITHUB_OUTPUT
                   fi
 
-            - name: Checkout to resolve SHA
-              uses: actions/checkout@v6
-              with:
-                  ref: ${{ steps.resolve.outputs.ref }}
-
-            - name: Compute final metadata
-              id: meta
-              run: |
-                  REF="${{ steps.resolve.outputs.ref }}"
-                  TAG_PREFIX="${{ steps.resolve.outputs.tag_prefix }}"
-                  SHA_SHORT=$(git rev-parse --short HEAD)
-                  echo "ref=${REF}" >> $GITHUB_OUTPUT
-                  echo "tag_prefix=${TAG_PREFIX}" >> $GITHUB_OUTPUT
-                  echo "sha_short=${SHA_SHORT}" >> $GITHUB_OUTPUT
-                  echo "version_label=${TAG_PREFIX}-${SHA_SHORT}" >> $GITHUB_OUTPUT
-
-    build-manager:
-        needs: prepare
-        runs-on: ubuntu-24.04
-
-        steps:
             - name: Checkout target ref
               uses: actions/checkout@v6
               with:
-                  ref: ${{ needs.prepare.outputs.ref }}
+                  ref: ${{ steps.meta.outputs.ref }}
+
+            - name: Compute version label
+              id: version
+              run: |
+                  SHA_SHORT=$(git rev-parse --short HEAD)
+                  TAG_PREFIX="${{ steps.meta.outputs.tag_prefix }}"
+                  echo "sha_short=${SHA_SHORT}" >> $GITHUB_OUTPUT
+                  echo "version_label=${TAG_PREFIX}-${SHA_SHORT}" >> $GITHUB_OUTPUT
 
             - name: Ensure CI Dockerfiles exist
               run: |
@@ -86,7 +74,7 @@ jobs:
             - name: Embed version/revision into .arcane.json
               run: |
                   SHA=$(git rev-parse HEAD)
-                  jq --arg version "${{ needs.prepare.outputs.version_label }}" \
+                  jq --arg version "${{ steps.version.outputs.version_label }}" \
                      --arg revision "${SHA}" \
                      '.version = $version | .revision = $revision' \
                      .arcane.json > .arcane.json.tmp && mv .arcane.json.tmp .arcane.json
@@ -129,46 +117,31 @@ jobs:
               run: go mod download
               working-directory: backend
 
-            - name: Build manager binary (amd64)
+            - name: Build manager binaries and setup QEMU
               working-directory: backend
-              env:
-                  CGO_ENABLED: 0
-                  GOOS: linux
-                  GOARCH: amd64
               run: |
+                  # Setup QEMU for multi-arch Docker builds in background
+                  docker run --rm --privileged tonistiigi/binfmt --install all &
+
                   VERSION=$(jq -r '.version' ../.arcane.json)
                   REVISION=$(jq -r '.revision' ../.arcane.json)
                   BUILD_TIME=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
-                  go build \
-                    -ldflags "-w -s \
-                      -X github.com/getarcaneapp/arcane/backend/internal/config.Version=${VERSION} \
-                      -X github.com/getarcaneapp/arcane/backend/internal/config.Revision=${REVISION} \
-                      -X github.com/getarcaneapp/arcane/backend/internal/config.BuildTime=${BUILD_TIME}" \
-                    -trimpath \
-                    -o ../dist/arcane-linux-amd64 \
-                    ./cmd/main.go
+                  LDFLAGS="-w -s \
+                    -X github.com/getarcaneapp/arcane/backend/internal/config.Version=${VERSION} \
+                    -X github.com/getarcaneapp/arcane/backend/internal/config.Revision=${REVISION} \
+                    -X github.com/getarcaneapp/arcane/backend/internal/config.BuildTime=${BUILD_TIME}"
 
-            - name: Build manager binary (arm64)
-              working-directory: backend
-              env:
-                  CGO_ENABLED: 0
-                  GOOS: linux
-                  GOARCH: arm64
-              run: |
-                  VERSION=$(jq -r '.version' ../.arcane.json)
-                  REVISION=$(jq -r '.revision' ../.arcane.json)
-                  BUILD_TIME=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
-                  go build \
-                    -ldflags "-w -s \
-                      -X github.com/getarcaneapp/arcane/backend/internal/config.Version=${VERSION} \
-                      -X github.com/getarcaneapp/arcane/backend/internal/config.Revision=${REVISION} \
-                      -X github.com/getarcaneapp/arcane/backend/internal/config.BuildTime=${BUILD_TIME}" \
-                    -trimpath \
-                    -o ../dist/arcane-linux-arm64 \
-                    ./cmd/main.go
+                  # Build both architectures in parallel
+                  CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+                    -ldflags "${LDFLAGS}" -trimpath \
+                    -o ../dist/arcane-linux-amd64 ./cmd/main.go &
 
-            - name: Set up QEMU
-              uses: docker/setup-qemu-action@v3
+                  CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build \
+                    -ldflags "${LDFLAGS}" -trimpath \
+                    -o ../dist/arcane-linux-arm64 ./cmd/main.go &
+
+                  # Wait for all background jobs (Go builds + QEMU)
+                  wait
 
             - name: Set up Docker Buildx
               uses: docker/setup-buildx-action@v3
@@ -186,10 +159,10 @@ jobs:
               with:
                   images: ${{ env.MANAGER_IMAGE_NAME }}
                   tags: |
-                      type=raw,value=${{ needs.prepare.outputs.tag_prefix }}
-                      type=raw,value=${{ needs.prepare.outputs.version_label }}
+                      type=raw,value=${{ steps.meta.outputs.tag_prefix }}
+                      type=raw,value=${{ steps.version.outputs.version_label }}
                   labels: |
-                      org.opencontainers.image.version=${{ needs.prepare.outputs.version_label }}
+                      org.opencontainers.image.version=${{ steps.version.outputs.version_label }}
                       org.opencontainers.image.revision=${{ github.sha }}
                       org.opencontainers.image.ref.name=arcane
                       org.opencontainers.image.title=Arcane
@@ -208,14 +181,36 @@ jobs:
                   cache-to: type=gha,mode=max,scope=manager-ci-dev
 
     build-agent:
-        needs: prepare
         runs-on: ubuntu-24.04
 
         steps:
+            - name: Resolve build metadata
+              id: meta
+              run: |
+                  if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+                    echo "ref=${{ github.event.inputs.ref }}" >> $GITHUB_OUTPUT
+                    SLUG=$(echo "${{ github.event.inputs.ref }}" | sed 's/[^a-zA-Z0-9._-]/-/g' | tr '[:upper:]' '[:lower:]')
+                    echo "tag_prefix=dev-${SLUG}" >> $GITHUB_OUTPUT
+                  elif [ "${{ github.ref }}" = "refs/heads/main" ]; then
+                    echo "ref=${{ github.sha }}" >> $GITHUB_OUTPUT
+                    echo "tag_prefix=next" >> $GITHUB_OUTPUT
+                  else
+                    echo "ref=${{ github.sha }}" >> $GITHUB_OUTPUT
+                    echo "tag_prefix=dev" >> $GITHUB_OUTPUT
+                  fi
+
             - name: Checkout target ref
               uses: actions/checkout@v6
               with:
-                  ref: ${{ needs.prepare.outputs.ref }}
+                  ref: ${{ steps.meta.outputs.ref }}
+
+            - name: Compute version label
+              id: version
+              run: |
+                  SHA_SHORT=$(git rev-parse --short HEAD)
+                  TAG_PREFIX="${{ steps.meta.outputs.tag_prefix }}"
+                  echo "sha_short=${SHA_SHORT}" >> $GITHUB_OUTPUT
+                  echo "version_label=${TAG_PREFIX}-${SHA_SHORT}" >> $GITHUB_OUTPUT
 
             - name: Ensure CI Dockerfiles exist
               run: |
@@ -227,7 +222,7 @@ jobs:
             - name: Embed version/revision into .arcane.json
               run: |
                   SHA=$(git rev-parse HEAD)
-                  jq --arg version "${{ needs.prepare.outputs.version_label }}" \
+                  jq --arg version "${{ steps.version.outputs.version_label }}" \
                      --arg revision "${SHA}" \
                      '.version = $version | .revision = $revision' \
                      .arcane.json > .arcane.json.tmp && mv .arcane.json.tmp .arcane.json
@@ -245,48 +240,33 @@ jobs:
               run: go mod download
               working-directory: backend
 
-            - name: Build agent binary (amd64)
+            - name: Build agent binaries and setup QEMU
               working-directory: backend
-              env:
-                  CGO_ENABLED: 0
-                  GOOS: linux
-                  GOARCH: amd64
               run: |
+                  # Setup QEMU for multi-arch Docker builds in background
+                  docker run --rm --privileged tonistiigi/binfmt --install all &
+
                   VERSION=$(jq -r '.version' ../.arcane.json)
                   REVISION=$(jq -r '.revision' ../.arcane.json)
                   BUILD_TIME=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
-                  go build \
-                    -tags exclude_frontend \
-                    -ldflags "-w -s \
-                      -X github.com/getarcaneapp/arcane/backend/internal/config.Version=${VERSION} \
-                      -X github.com/getarcaneapp/arcane/backend/internal/config.Revision=${REVISION} \
-                      -X github.com/getarcaneapp/arcane/backend/internal/config.BuildTime=${BUILD_TIME}" \
-                    -trimpath \
-                    -o ../dist/arcane-agent-linux-amd64 \
-                    ./cmd/main.go
+                  LDFLAGS="-w -s \
+                    -X github.com/getarcaneapp/arcane/backend/internal/config.Version=${VERSION} \
+                    -X github.com/getarcaneapp/arcane/backend/internal/config.Revision=${REVISION} \
+                    -X github.com/getarcaneapp/arcane/backend/internal/config.BuildTime=${BUILD_TIME}"
 
-            - name: Build agent binary (arm64)
-              working-directory: backend
-              env:
-                  CGO_ENABLED: 0
-                  GOOS: linux
-                  GOARCH: arm64
-              run: |
-                  VERSION=$(jq -r '.version' ../.arcane.json)
-                  REVISION=$(jq -r '.revision' ../.arcane.json)
-                  BUILD_TIME=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
-                  go build \
+                  # Build both architectures in parallel
+                  CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
                     -tags exclude_frontend \
-                    -ldflags "-w -s \
-                      -X github.com/getarcaneapp/arcane/backend/internal/config.Version=${VERSION} \
-                      -X github.com/getarcaneapp/arcane/backend/internal/config.Revision=${REVISION} \
-                      -X github.com/getarcaneapp/arcane/backend/internal/config.BuildTime=${BUILD_TIME}" \
-                    -trimpath \
-                    -o ../dist/arcane-agent-linux-arm64 \
-                    ./cmd/main.go
+                    -ldflags "${LDFLAGS}" -trimpath \
+                    -o ../dist/arcane-agent-linux-amd64 ./cmd/main.go &
 
-            - name: Set up QEMU
-              uses: docker/setup-qemu-action@v3
+                  CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build \
+                    -tags exclude_frontend \
+                    -ldflags "${LDFLAGS}" -trimpath \
+                    -o ../dist/arcane-agent-linux-arm64 ./cmd/main.go &
+
+                  # Wait for all background jobs (Go builds + QEMU)
+                  wait
 
             - name: Set up Docker Buildx
               uses: docker/setup-buildx-action@v3
@@ -304,10 +284,10 @@ jobs:
               with:
                   images: ${{ env.AGENT_IMAGE_NAME }}
                   tags: |
-                      type=raw,value=${{ needs.prepare.outputs.tag_prefix }}
-                      type=raw,value=${{ needs.prepare.outputs.version_label }}
+                      type=raw,value=${{ steps.meta.outputs.tag_prefix }}
+                      type=raw,value=${{ steps.version.outputs.version_label }}
                   labels: |
-                      org.opencontainers.image.version=${{ needs.prepare.outputs.version_label }}
+                      org.opencontainers.image.version=${{ steps.version.outputs.version_label }}
                       org.opencontainers.image.revision=${{ github.sha }}
                       org.opencontainers.image.ref.name=arcane-agent
                       org.opencontainers.image.title=Arcane Agent
