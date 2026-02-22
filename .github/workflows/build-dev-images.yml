@@ -1,37 +1,76 @@
-name: Build PR Images
-# fork: uses standard GitHub runners — compiles Go/frontend on host for persistent GHA caching,
-#       then packages into a minimal Docker image. Manager and agent build in parallel.
+name: Build Dev Images
+# fork: builds Docker images for any branch on demand, or auto-builds on push to main.
+# Uses host compilation + CI Dockerfiles (same pattern as build-pr-images.yml).
 
 on:
-    pull_request_target:
+    push:
         branches:
             - main
-            - feat/docker-swarm
+    workflow_dispatch:
+        inputs:
+            ref:
+                description: "Branch, tag, or SHA to build images from"
+                required: true
+                type: string
 
 concurrency:
-    group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+    group: build-dev-images-${{ github.event.inputs.ref || github.ref }}
     cancel-in-progress: true
 
 permissions:
     contents: read
     packages: write
-    id-token: write
-    pull-requests: write
 
 env:
     MANAGER_IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/arcane
     AGENT_IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/arcane-headless
 
 jobs:
+    prepare:
+        runs-on: ubuntu-24.04
+        outputs:
+            ref: ${{ steps.meta.outputs.ref }}
+            sha_short: ${{ steps.meta.outputs.sha_short }}
+            tag_prefix: ${{ steps.meta.outputs.tag_prefix }}
+            version_label: ${{ steps.meta.outputs.version_label }}
+        steps:
+            - name: Determine target ref
+              id: resolve
+              run: |
+                  if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+                    echo "ref=${{ github.event.inputs.ref }}" >> $GITHUB_OUTPUT
+                    SLUG=$(echo "${{ github.event.inputs.ref }}" | sed 's/[^a-zA-Z0-9._-]/-/g' | tr '[:upper:]' '[:lower:]')
+                    echo "tag_prefix=dev-${SLUG}" >> $GITHUB_OUTPUT
+                  else
+                    echo "ref=${{ github.sha }}" >> $GITHUB_OUTPUT
+                    echo "tag_prefix=next" >> $GITHUB_OUTPUT
+                  fi
+
+            - name: Checkout to resolve SHA
+              uses: actions/checkout@v6
+              with:
+                  ref: ${{ steps.resolve.outputs.ref }}
+
+            - name: Compute final metadata
+              id: meta
+              run: |
+                  REF="${{ steps.resolve.outputs.ref }}"
+                  TAG_PREFIX="${{ steps.resolve.outputs.tag_prefix }}"
+                  SHA_SHORT=$(git rev-parse --short HEAD)
+                  echo "ref=${REF}" >> $GITHUB_OUTPUT
+                  echo "tag_prefix=${TAG_PREFIX}" >> $GITHUB_OUTPUT
+                  echo "sha_short=${SHA_SHORT}" >> $GITHUB_OUTPUT
+                  echo "version_label=${TAG_PREFIX}-${SHA_SHORT}" >> $GITHUB_OUTPUT
+
     build-manager:
+        needs: prepare
         runs-on: ubuntu-24.04
 
         steps:
-            - name: Checkout code
+            - name: Checkout target ref
               uses: actions/checkout@v6
               with:
-                  ref: ${{ github.event.pull_request.head.sha }}
-                  repository: ${{ github.event.pull_request.head.repo.full_name }}
+                  ref: ${{ needs.prepare.outputs.ref }}
 
             - name: Ensure CI Dockerfiles exist
               run: |
@@ -40,10 +79,11 @@ jobs:
                     git checkout origin/main -- docker/Dockerfile.ci-manager docker/Dockerfile.ci-agent
                   fi
 
-            - name: Embed PR version/revision into .arcane.json
+            - name: Embed version/revision into .arcane.json
               run: |
-                  jq --arg version "pr-${{ github.event.pull_request.number }}" \
-                     --arg revision "${{ github.event.pull_request.head.sha }}" \
+                  SHA=$(git rev-parse HEAD)
+                  jq --arg version "${{ needs.prepare.outputs.version_label }}" \
+                     --arg revision "${SHA}" \
                      '.version = $version | .revision = $revision' \
                      .arcane.json > .arcane.json.tmp && mv .arcane.json.tmp .arcane.json
 
@@ -142,15 +182,11 @@ jobs:
               with:
                   images: ${{ env.MANAGER_IMAGE_NAME }}
                   tags: |
-                      type=raw,value=pr-${{ github.event.pull_request.number }}
+                      type=raw,value=${{ needs.prepare.outputs.tag_prefix }}
+                      type=raw,value=${{ needs.prepare.outputs.version_label }}
                   labels: |
-                      org.opencontainers.image.authors=OFKM Technologies
-                      org.opencontainers.image.url=https://github.com/getarcaneapp/arcane
-                      org.opencontainers.image.documentation=https://github.com/getarcaneapp/arcane/blob/main/README.md
-                      org.opencontainers.image.source=https://github.com/getarcaneapp/arcane
-                      org.opencontainers.image.version=pr-${{ github.event.pull_request.number }}
-                      org.opencontainers.image.revision=${{ github.event.pull_request.head.sha }}
-                      org.opencontainers.image.licenses=BSD-3-Clause
+                      org.opencontainers.image.version=${{ needs.prepare.outputs.version_label }}
+                      org.opencontainers.image.revision=${{ github.sha }}
                       org.opencontainers.image.ref.name=arcane
                       org.opencontainers.image.title=Arcane
                       org.opencontainers.image.description=Modern Docker Management, Made for Everyone
@@ -164,18 +200,18 @@ jobs:
                   push: true
                   tags: ${{ steps.manager-meta.outputs.tags }}
                   labels: ${{ steps.manager-meta.outputs.labels }}
-                  cache-from: type=gha,scope=manager-ci-package
-                  cache-to: type=gha,mode=max,scope=manager-ci-package
+                  cache-from: type=gha,scope=manager-ci-dev
+                  cache-to: type=gha,mode=max,scope=manager-ci-dev
 
     build-agent:
+        needs: prepare
         runs-on: ubuntu-24.04
 
         steps:
-            - name: Checkout code
+            - name: Checkout target ref
               uses: actions/checkout@v6
               with:
-                  ref: ${{ github.event.pull_request.head.sha }}
-                  repository: ${{ github.event.pull_request.head.repo.full_name }}
+                  ref: ${{ needs.prepare.outputs.ref }}
 
             - name: Ensure CI Dockerfiles exist
               run: |
@@ -184,10 +220,11 @@ jobs:
                     git checkout origin/main -- docker/Dockerfile.ci-manager docker/Dockerfile.ci-agent
                   fi
 
-            - name: Embed PR version/revision into .arcane.json
+            - name: Embed version/revision into .arcane.json
               run: |
-                  jq --arg version "pr-${{ github.event.pull_request.number }}" \
-                     --arg revision "${{ github.event.pull_request.head.sha }}" \
+                  SHA=$(git rev-parse HEAD)
+                  jq --arg version "${{ needs.prepare.outputs.version_label }}" \
+                     --arg revision "${SHA}" \
                      '.version = $version | .revision = $revision' \
                      .arcane.json > .arcane.json.tmp && mv .arcane.json.tmp .arcane.json
 
@@ -263,15 +300,11 @@ jobs:
               with:
                   images: ${{ env.AGENT_IMAGE_NAME }}
                   tags: |
-                      type=raw,value=pr-${{ github.event.pull_request.number }}
+                      type=raw,value=${{ needs.prepare.outputs.tag_prefix }}
+                      type=raw,value=${{ needs.prepare.outputs.version_label }}
                   labels: |
-                      org.opencontainers.image.authors=OFKM Technologies
-                      org.opencontainers.image.url=https://github.com/getarcaneapp/arcane
-                      org.opencontainers.image.documentation=https://github.com/getarcaneapp/arcane/blob/main/README.md
-                      org.opencontainers.image.source=https://github.com/getarcaneapp/arcane
-                      org.opencontainers.image.version=pr-${{ github.event.pull_request.number }}
-                      org.opencontainers.image.revision=${{ github.event.pull_request.head.sha }}
-                      org.opencontainers.image.licenses=BSD-3-Clause
+                      org.opencontainers.image.version=${{ needs.prepare.outputs.version_label }}
+                      org.opencontainers.image.revision=${{ github.sha }}
                       org.opencontainers.image.ref.name=arcane-agent
                       org.opencontainers.image.title=Arcane Agent
                       org.opencontainers.image.description=Arcane Agent
@@ -285,34 +318,5 @@ jobs:
                   push: true
                   tags: ${{ steps.agent-meta.outputs.tags }}
                   labels: ${{ steps.agent-meta.outputs.labels }}
-                  cache-from: type=gha,scope=agent-ci-package
-                  cache-to: type=gha,mode=max,scope=agent-ci-package
-
-    comment:
-        runs-on: ubuntu-24.04
-        needs: [build-manager, build-agent]
-        if: always() && needs.build-manager.result == 'success' && needs.build-agent.result == 'success'
-
-        steps:
-            - name: Find Comment
-              uses: peter-evans/find-comment@v4
-              id: fc
-              with:
-                  issue-number: ${{ github.event.pull_request.number }}
-                  comment-author: "github-actions[bot]"
-                  body-includes: Container images for this PR have been built successfully!
-
-            - name: Comment PR Images
-              uses: peter-evans/create-or-update-comment@v5
-              with:
-                  comment-id: ${{ steps.fc.outputs.comment-id }}
-                  issue-number: ${{ github.event.pull_request.number }}
-                  token: ${{ secrets.GITHUB_TOKEN }}
-                  body: |
-                      Container images for this PR have been built successfully!
-
-                      - **Manager**: `${{ env.MANAGER_IMAGE_NAME }}:pr-${{ github.event.pull_request.number }}`
-                      - **Agent**: `${{ env.AGENT_IMAGE_NAME }}:pr-${{ github.event.pull_request.number }}`
-
-                      Built from commit ${{ github.event.pull_request.head.sha }}
-                  edit-mode: replace
+                  cache-from: type=gha,scope=agent-ci-dev
+                  cache-to: type=gha,mode=max,scope=agent-ci-dev
