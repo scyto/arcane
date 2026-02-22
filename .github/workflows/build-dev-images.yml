@@ -6,6 +6,7 @@ name: Build Dev Images
 #   - No separate prepare job (metadata computed inline, avoids scheduling overhead)
 #   - Parallel Go cross-compilation (amd64 + arm64 built concurrently)
 #   - QEMU setup overlapped with Go compilation (background process)
+#   - Frontend build cached (skips pnpm/Node setup + build when frontend unchanged)
 
 on:
     push:
@@ -79,21 +80,32 @@ jobs:
                      '.version = $version | .revision = $revision' \
                      .arcane.json > .arcane.json.tmp && mv .arcane.json.tmp .arcane.json
 
+            - name: Cache frontend build
+              id: frontend-cache
+              uses: actions/cache@v4
+              with:
+                  path: frontend/dist
+                  key: frontend-build-${{ hashFiles('frontend/**', 'pnpm-lock.yaml') }}
+
             - name: Setup pnpm
+              if: steps.frontend-cache.outputs.cache-hit != 'true'
               uses: pnpm/action-setup@v4
               with:
                   run_install: false
 
             - name: Setup Node.js
+              if: steps.frontend-cache.outputs.cache-hit != 'true'
               uses: actions/setup-node@v6
               with:
                   node-version: 25
                   cache: pnpm
 
             - name: Install frontend dependencies
+              if: steps.frontend-cache.outputs.cache-hit != 'true'
               run: pnpm install -r --frozen-lockfile
 
             - name: Build frontend
+              if: steps.frontend-cache.outputs.cache-hit != 'true'
               run: pnpm -C frontend build
               env:
                   NODE_OPTIONS: --max-old-space-size=4096
